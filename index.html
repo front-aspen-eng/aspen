@@ -7,6 +7,7 @@
   <style>
     :root{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP","Segoe UI",Roboto,"Helvetica Neue",Arial;}
     body{margin:0;background:#f7f8fb;color:#111}
+    /* 固定トップバー */
     .topbar{position:fixed;top:0;left:0;right:0;background:#f7f8fb;z-index:999;padding:12px 0;box-shadow:0 6px 18px rgba(12,20,30,0.04)}
     .topbar .wrap{max-width:980px;margin:0 auto;padding:0 16px}
     h1{font-size:18px;margin:0 0 8px}
@@ -15,20 +16,30 @@
     input[type=file],select,input[type=text]{padding:10px 12px;border-radius:10px;border:1px solid #e2e6ef;font-size:15px}
     button{padding:10px 12px;border-radius:10px;border:0;background:#0b66ff;color:#fff;font-weight:600;font-size:15px}
     .small{font-size:13px;color:#7b8190}
+
+    /* メイン（結果エリア）はトップバーの高さ分余白をとる */
     #main{max-width:980px;margin:0 auto;padding:16px}
+
     table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px;table-layout:auto}
     th,td{padding:8px 10px;border-bottom:1px solid #eef2f7;text-align:left;vertical-align:middle}
     th{background:#fbfdff}
     tr:hover{background:#f3f6ff}
+
+    /* カナ名列優先（最大20%）。長い場合は省略表示 */
     th.kana-col, td.kana-col{max-width:20%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     @media (max-width:640px){ th.kana-col, td.kana-col{max-width:30%} }
+
+    /* 小画面でトップバー内の要素が縦に並ぶように調整 */
     @media (max-width:760px){ .controls{flex-direction:column;align-items:stretch} }
   </style>
 </head>
 <body>
+
+  <!-- 固定トップバー：ここにタイトル / ファイル選択 / 検索欄をすべて入れる -->
   <div class="topbar" id="topbar">
     <div class="wrap">
       <h1>簡易ゲスト検索</h1>
+
       <div class="card" id="fileCard">
         <div class="controls">
           <label for="fileInput" class="small" style="margin-right:8px;">CSVファイル：</label>
@@ -40,6 +51,7 @@
           <button id="loadBtn">読み込み開始</button>
         </div>
       </div>
+
       <div class="card" id="searchCard" style="display:none">
         <div class="controls">
           <input id="searchInput" type="text" placeholder="カナ名を入力" autocomplete="off" style="flex:1;min-width:120px" />
@@ -49,6 +61,8 @@
       </div>
     </div>
   </div>
+
+  <!-- メインコンテンツ（結果一覧） -->
   <div id="main">
     <div id="resultsContainer" class="card" style="padding:8px">
       <table id="resultTable">
@@ -59,7 +73,9 @@
       </table>
     </div>
   </div>
+
 <script>
+// -------- 基本設定 --------
 let guestData = [];
 const topbar = document.getElementById('topbar');
 const fileInput = document.getElementById('fileInput');
@@ -68,29 +84,128 @@ const loadBtn = document.getElementById('loadBtn');
 const searchCard = document.getElementById('searchCard');
 const searchInput = document.getElementById('searchInput');
 const clearSearch = document.getElementById('clearSearch');
-function isIOS(){ return /iP(ad|hone|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
-let iOSKeyboardActive = false;
-function updateMainPadding(){ document.getElementById('main').style.paddingTop = (topbar.offsetHeight + 8) + 'px'; }
+
+// topbar の高さに応じて main の padding-top を設定
+function updateMainPadding(){
+  const h = topbar.offsetHeight;
+  document.getElementById('main').style.paddingTop = (h + 8) + 'px';
+}
 window.addEventListener('resize', updateMainPadding);
 window.addEventListener('load', updateMainPadding);
-function onIOSFocus(){ if(!isIOS()) return; iOSKeyboardActive=true; topbar.style.position='absolute'; topbar.style.top=window.pageYOffset+'px'; topbar.style.left='0'; topbar.style.right='0'; updateMainPadding(); window.addEventListener('scroll', onIOSScrollWhileFocused); }
-function onIOSBlur(){ if(!isIOS()) return; iOSKeyboardActive=false; topbar.style.position='fixed'; topbar.style.top='0'; topbar.style.left=''; topbar.style.right=''; updateMainPadding(); window.removeEventListener('scroll', onIOSScrollWhileFocused); }
-function onIOSScrollWhileFocused(){ if(!iOSKeyboardActive) return; topbar.style.top = window.pageYOffset + 'px'; }
-try{ searchInput.addEventListener('focus', onIOSFocus); searchInput.addEventListener('blur', onIOSBlur); }catch(e){}
-loadBtn.addEventListener('click', ()=>{ const file = fileInput.files && fileInput.files[0]; if(!file){ alert('CSVファイルを選択してください'); return; } loadCSV(file); });
-function loadCSV(file){ const reader=new FileReader(); const enc=encodingSelect.value; reader.onload=function(e){ try{ const arr=e.target.result; let text=''; try{text=new TextDecoder(enc).decode(arr);}catch(err){try{text=new TextDecoder('shift_jis').decode(arr);}catch{text=new TextDecoder('utf-8').decode(arr);}} parseCSV(text); searchCard.style.display='block'; updateMainPadding(); try{searchInput.focus();}catch(e){} }catch(err){alert('エラー: '+err);} };
-reader.onerror=()=>alert('ファイルの読み込みに失敗しました'); reader.readAsArrayBuffer(file); }
-function splitCSVLine(line){ const cols=[]; let cur=''; let inQuotes=false; for(let i=0;i<line.length;i++){ const ch=line[i]; const nx=line[i+1]; if(ch==='"'){ if(inQuotes&&nx==='"'){ cur+='"'; i++; } else inQuotes=!inQuotes; } else if(ch===','&&!inQuotes){ cols.push(cur); cur=''; } else cur+=ch; } cols.push(cur); return cols; }
-function stripQuotes(s){ if(s===undefined||s===null) return ''; s=String(s).trim(); if(s.startsWith('"') && s.endsWith('"')) return s.slice(1,-1).replace(/""/g,'"').trim(); return s; }
-function parseCSV(text){ const lines=String(text).split(/\r?\n/).filter(l=>l.trim()!== ''); if(lines.length===0){ alert('CSVが空です'); return; } if(lines.length>1){ const second=splitCSVLine(lines[1]).map(stripQuotes); if(second.every(v=>v.toUpperCase()==='STRING')) lines.splice(1,1); } const header=splitCSVLine(lines[0]).map(stripQuotes); const idx={ kana:header.indexOf('カナ名'), arrival:header.indexOf('到着日'), depart:header.indexOf('出発日'), nights:header.indexOf('泊'), remarks:header.indexOf('備考') }; if(Object.values(idx).some(v=>v===-1)){ alert('必要列が見つかりません'); return; } guestData=lines.slice(1).map(line=>{ const c=splitCSVLine(line).map(stripQuotes); return { kana:c[idx.kana]||'', arrival:c[idx.arrival]||'', depart:c[idx.depart]||'', nights:c[idx.nights]||'', remarks:c[idx.remarks]||'' }; }); renderTable(guestData); }
-function toZenkakuKana(str){ if(!str) return ''; let s=String(str).replace(/[ぁ-ゖ]/g,ch=>String.fromCharCode(ch.charCodeAt(0)+0x60)); try{s=s.normalize('NFKC');}catch(e){} return s; }
-searchInput.addEventListener('input',()=>{ const key=toZenkakuKana(searchInput.value.trim()).toLowerCase(); if(key===''){ renderTable(guestData); updateMainPadding(); return; } const filtered=guestData.filter(g=>toZenkakuKana(g.kana||'').toLowerCase().includes(key)); renderTable(filtered); updateMainPadding(); });
-clearSearch.addEventListener('click',()=>{ searchInput.value=''; renderTable(guestData); updateMainPadding(); });
-function pad2(n){ return n.toString().padStart(2,'0'); }
-function formatMMDD(str){ if(!str) return ''; const s=String(str).trim(); if(s.length>=10 && (s[4]==='/'||s[4]==='-')){ const mm=s.substring(5,7); const dd=s.substring(8,10); return pad2(mm)+'/'+pad2(dd); } let sep='/'; if(s.indexOf('/')===-1&&s.indexOf('-')!==-1) sep='-'; if(s.indexOf(sep)!==-1){ const parts=s.split(sep).filter(p=>p!==''); if(parts.length>=2){ if(parts[0].length===4) parts.shift(); const mm=parts[0]||''; const dd=parts[1]||''; if(mm&&dd) return pad2(mm)+'/'+pad2(dd); } } return s; }
-function renderTable(list){ const tbody=document.querySelector('#resultTable tbody'); tbody.innerHTML=''; list.forEach(g=>{ const tr=document.createElement('tr'); const tdKana=document.createElement('td'); tdKana.className='kana-col'; tdKana.textContent=g.kana||''; tdKana.title=g.kana||''; tr.appendChild(tdKana); const tdArrival=document.createElement('td'); tdArrival.textContent=formatMMDD(g.arrival||''); tr.appendChild(tdArrival); const tdDepart=document.createElement('td'); tdDepart.textContent=formatMMDD(g.depart||''); tr.appendChild(tdDepart); const tdNights=document.createElement('td'); tdNights.textContent=g.nights||''; tr.appendChild(tdNights); const tdRemarks=document.createElement('td'); tdRemarks.textContent=g.remarks||''; tr.appendChild(tdRemarks); tbody.appendChild(tr); });
-document.getElementById('resultCount').textContent=`${list.length} 件表示`; updateMainPadding();
+
+// -------- CSV 読み込み --------
+loadBtn.addEventListener('click', () => {
+  const file = fileInput.files && fileInput.files[0];
+  if(!file){ alert('CSVファイルを選択してください'); return; }
+  loadCSV(file);
+});
+
+function loadCSV(file){
+  const reader = new FileReader();
+  const enc = encodingSelect.value;
+
+  reader.onload = function(e){
+    try{
+      const arr = e.target.result;
+      let text = '';
+      try{ text = new TextDecoder(enc).decode(arr); }
+      catch(err){
+        try{ text = new TextDecoder('shift_jis').decode(arr); }
+        catch{ text = new TextDecoder('utf-8').decode(arr); }
+      }
+      parseCSV(text);
+      // 検索欄表示とレイアウト再計算
+      searchCard.style.display = 'block';
+      updateMainPadding();
+      // フォーカスはユーザー操作直後なのでOK
+      try{ searchInput.focus(); }catch(e){}
+    }catch(err){ alert('エラー: ' + err); }
+  };
+  reader.onerror = ()=> alert('ファイルの読み込みに失敗しました');
+  reader.readAsArrayBuffer(file);
 }
+
+// -------- CSV パーサ --------
+function splitCSVLine(line){
+  const cols = [];
+  let cur = '';
+  let inQuotes = false;
+  for(let i=0;i<line.length;i++){
+    const ch = line[i];
+    const nx = line[i+1];
+    if(ch === '"'){
+      if(inQuotes && nx === '"'){ cur += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if(ch === ',' && !inQuotes){ cols.push(cur); cur = ''; }
+    else cur += ch;
+  }
+  cols.push(cur);
+  return cols;
+}
+
+function stripQuotes(s){ if(s===undefined||s===null) return ''; s = String(s).trim(); if(s.startsWith('"') && s.endsWith('"')) return s.slice(1,-1).replace(/""/g,'"').trim(); return s; }
+
+function parseCSV(text){
+  // Fix: split by CRLF or LF safely
+  const lines = String(text).split(/\r?\n/).filter(l=>l.trim()!== '');
+  if(lines.length===0){ alert('CSVが空です'); return; }
+
+  // 2行目に STRING が並ぶ場合は削除
+  if(lines.length>1){ const second = splitCSVLine(lines[1]).map(stripQuotes); if(second.every(v=>v.toUpperCase()==='STRING')) lines.splice(1,1); }
+
+  const header = splitCSVLine(lines[0]).map(stripQuotes);
+  const idx = { kana: header.indexOf('カナ名'), arrival: header.indexOf('到着日'), depart: header.indexOf('出発日'), nights: header.indexOf('泊'), remarks: header.indexOf('備考') };
+  if(Object.values(idx).some(v=>v===-1)){ alert('必要列が見つかりません'); return; }
+
+  guestData = lines.slice(1).map(line => {
+    const c = splitCSVLine(line).map(stripQuotes);
+    return { kana:c[idx.kana]||'', arrival:c[idx.arrival]||'', depart:c[idx.depart]||'', nights:c[idx.nights]||'', remarks:c[idx.remarks]||'' };
+  });
+  renderTable(guestData);
+}
+
+// -------- 全角カナ正規化 --------
+function toZenkakuKana(str){
+  if(!str) return '';
+  // ひらがな -> カタカナ
+  let s = String(str).replace(/[ぁ-ゖ]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60));
+  // 半角カナ -> 全角（NFKCで半角→全角に変換）
+  try{ s = s.normalize('NFKC'); }catch(e){}
+  return s;
+}
+
+// -------- 検索ロジック --------
+searchInput.addEventListener('input', ()=>{
+  const key = toZenkakuKana(searchInput.value.trim()).toLowerCase();
+  if(key===''){ renderTable(guestData); updateMainPadding(); return; }
+  const filtered = guestData.filter(g => toZenkakuKana(g.kana||'').toLowerCase().includes(key));
+  renderTable(filtered);
+  updateMainPadding();
+});
+clearSearch.addEventListener('click', ()=>{ searchInput.value=''; renderTable(guestData); updateMainPadding(); });
+
+// -------- 日付表示（MM/DD） --------
+function pad2(n){ return n.toString().padStart(2,'0'); }
+function formatMMDD(str){ if(!str) return ''; const s = String(str).trim(); if(s.length>=10 && (s[4]==='/'||s[4]==='-')){ const mm = s.substring(5,7); const dd = s.substring(8,10); return pad2(mm) + '/' + pad2(dd); } let sep = '/'; if(s.indexOf('/')===-1 && s.indexOf('-')!==-1) sep='-'; if(s.indexOf(sep)!==-1){ const parts = s.split(sep).filter(p=>p!==''); if(parts.length>=2){ if(parts[0].length===4) parts.shift(); const mm = parts[0]||''; const dd = parts[1]||''; if(mm && dd) return pad2(mm) + '/' + pad2(dd); } } return s; }
+
+// -------- 表示処理 --------
+function renderTable(list){
+  const tbody = document.querySelector('#resultTable tbody'); tbody.innerHTML='';
+  list.forEach(g=>{
+    const tr = document.createElement('tr');
+    const tdKana = document.createElement('td'); tdKana.className='kana-col'; tdKana.textContent = g.kana||''; tdKana.title = g.kana||''; tr.appendChild(tdKana);
+    const tdArrival = document.createElement('td'); tdArrival.textContent = formatMMDD(g.arrival||''); tr.appendChild(tdArrival);
+    const tdDepart = document.createElement('td'); tdDepart.textContent = formatMMDD(g.depart||''); tr.appendChild(tdDepart);
+    const tdNights = document.createElement('td'); tdNights.textContent = g.nights||''; tr.appendChild(tdNights);
+    const tdRemarks = document.createElement('td'); tdRemarks.textContent = g.remarks||''; tr.appendChild(tdRemarks);
+    tbody.appendChild(tr);
+  });
+  document.getElementById('resultCount').textContent = `${list.length} 件表示`;
+  // ensure layout padding is updated after rendering
+  updateMainPadding();
+}
+
+// 初回 padding 設定
 updateMainPadding();
 </script>
 </body>
