@@ -14,11 +14,14 @@
     .controls{display:flex;gap:8px;flex-wrap:wrap}
     input[type=file],select,input[type=text]{padding:10px 12px;border-radius:10px;border:1px solid #e2e6ef;font-size:15px}
     button{padding:10px 12px;border-radius:10px;border:0;background:#0b66ff;color:#fff;font-weight:600;font-size:15px}
-    table{width:100%;border-collapse:collapse;margin-top:12px;font-size:14px}
-    th,td{padding:8px 10px;border-bottom:1px solid #eef2f7;text-align:left}
+    table{width:100%;border-collapse:collapse;margin-top:12px;font-size:14px;table-layout:auto}
+    th,td{padding:8px 10px;border-bottom:1px solid #eef2f7;text-align:left;vertical-align:middle}
     th{background:#fbfdff;position:sticky;top:0}
     tr:hover{background:#f3f6ff}
     .small{font-size:13px;color:#7b8190}
+    /* カナ名列を優先的に見せる。幅は内容に合わせつつ最大で画面の30%に制限。長い場合は省略表示 */
+    th.kana-col, td.kana-col{max-width:20%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    @media (max-width:640px){ th.kana-col, td.kana-col{max-width:30%} }
   </style>
 </head>
 <body>
@@ -115,7 +118,8 @@ function stripQuotes(s){
 }
 
 function parseCSV(text){
-  const lines = text.split(/\n/).filter(l=>l.trim()!=='');
+  // Fix: split by newline (CRLF or LF)
+  const lines = String(text).split(/\r?\n/).filter(l=>l.trim()!== '');
   if(lines.length===0){ alert('CSVが空です'); return; }
 
   const second = splitCSVLine(lines[1]||'').map(stripQuotes);
@@ -163,12 +167,62 @@ document.getElementById('clearSearch').onclick = () =>{
 
 function renderTable(list){
   const tbody = document.querySelector('#resultTable tbody');
-  tbody.innerHTML='';
+  tbody.innerHTML = '';
+
+  // helper: format yyyy/mm/dd or yyyy-mm-dd -> mm/dd (avoid regex to keep replacement safe)
+  function formatMMDD_noRegex(s){
+    if(!s) return '';
+    const str = String(s).trim();
+    if(str.length >= 10 && (str[4] === '/' || str[4] === '-')){
+      // assume YYYY/MM/DD or YYYY-MM-DD
+      const mm = str.substring(5,7);
+      const dd = str.substring(8,10);
+      if(mm && dd) return (mm.length===1? '0'+mm: mm) + '/' + (dd.length===1? '0'+dd: dd);
+    }
+    // fallback: split by / or - and try to pick last two parts
+    let sep = '/';
+    if(str.indexOf('/') === -1 && str.indexOf('-') !== -1) sep = '-';
+    if(str.indexOf(sep) !== -1){
+      const parts = str.split(sep).filter(p=>p!=='');
+      if(parts.length >= 2){
+        // if first part is 4-digit year, remove it
+        if(parts[0].length === 4) parts.shift();
+        const mm = parts[0] || '';
+        const dd = parts[1] || '';
+        if(mm && dd) return (mm.length===1? '0'+mm: mm) + '/' + (dd.length===1? '0'+dd: dd);
+      }
+    }
+    return str;
+  }
+
   list.forEach(g =>{
-    const tr=document.createElement('tr');
-    tr.innerHTML = `<td>${g.kana}</td><td>${g.arrival}</td><td>${g.depart}</td><td>${g.nights}</td><td>${g.remarks}</td>`;
+    const tr = document.createElement('tr');
+
+    const tdKana = document.createElement('td');
+    tdKana.className = 'kana-col';
+    tdKana.textContent = g.kana || '';
+    tdKana.title = g.kana || '';
+    tr.appendChild(tdKana);
+
+    const tdArrival = document.createElement('td');
+    tdArrival.textContent = formatMMDD_noRegex(g.arrival || '');
+    tr.appendChild(tdArrival);
+
+    const tdDepart = document.createElement('td');
+    tdDepart.textContent = formatMMDD_noRegex(g.depart || '');
+    tr.appendChild(tdDepart);
+
+    const tdNights = document.createElement('td');
+    tdNights.textContent = g.nights || '';
+    tr.appendChild(tdNights);
+
+    const tdRemarks = document.createElement('td');
+    tdRemarks.textContent = g.remarks || '';
+    tr.appendChild(tdRemarks);
+
     tbody.appendChild(tr);
   });
+
   document.getElementById('resultCount').textContent = `${list.length} 件表示`;
 }
 </script>
