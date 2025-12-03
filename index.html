@@ -85,6 +85,12 @@ const searchCard = document.getElementById('searchCard');
 const searchInput = document.getElementById('searchInput');
 const clearSearch = document.getElementById('clearSearch');
 
+// Detect iOS for keyboard handling
+function isIOS(){
+  return /iP(ad|hone|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+let iOSKeyboardActive = false;
+
 // topbar の高さに応じて main の padding-top を設定
 function updateMainPadding(){
   const h = topbar.offsetHeight;
@@ -92,6 +98,40 @@ function updateMainPadding(){
 }
 window.addEventListener('resize', updateMainPadding);
 window.addEventListener('load', updateMainPadding);
+
+// When iOS keyboard is shown, switch topbar to absolute and follow scroll to avoid Safari reposition bug
+function onIOSFocus(){
+  if(!isIOS()) return;
+  iOSKeyboardActive = true;
+  topbar.style.position = 'absolute';
+  topbar.style.top = window.pageYOffset + 'px';
+  topbar.style.left = '0';
+  topbar.style.right = '0';
+  // update padding so content doesn't jump
+  updateMainPadding();
+  window.addEventListener('scroll', onIOSScrollWhileFocused);
+}
+function onIOSBlur(){
+  if(!isIOS()) return;
+  iOSKeyboardActive = false;
+  topbar.style.position = 'fixed';
+  topbar.style.top = '0';
+  topbar.style.left = '';
+  topbar.style.right = '';
+  updateMainPadding();
+  window.removeEventListener('scroll', onIOSScrollWhileFocused);
+}
+function onIOSScrollWhileFocused(){
+  if(!iOSKeyboardActive) return;
+  // keep topbar visually at top of viewport by anchoring it to scroll position
+  topbar.style.top = window.pageYOffset + 'px';
+}
+
+// attach focus/blur handlers to search input to handle iOS keyboard issue
+try{
+  searchInput.addEventListener('focus', onIOSFocus);
+  searchInput.addEventListener('blur', onIOSBlur);
+}catch(e){/* ignore if element not present yet */}
 
 // -------- CSV 読み込み --------
 loadBtn.addEventListener('click', () => {
@@ -147,7 +187,9 @@ function stripQuotes(s){ if(s===undefined||s===null) return ''; s = String(s).tr
 
 function parseCSV(text){
   // Fix: split by CRLF or LF safely
-  const lines = String(text).split(/\r?\n/).filter(l=>l.trim()!== '');
+  const lines = String(text).split(/
+?
+/).filter(l=>l.trim()!== '');
   if(lines.length===0){ alert('CSVが空です'); return; }
 
   // 2行目に STRING が並ぶ場合は削除
@@ -177,11 +219,12 @@ function toZenkakuKana(str){
 // -------- 検索ロジック --------
 searchInput.addEventListener('input', ()=>{
   const key = toZenkakuKana(searchInput.value.trim()).toLowerCase();
-  if(key===''){ renderTable(guestData); return; }
+  if(key===''){ renderTable(guestData); updateMainPadding(); return; }
   const filtered = guestData.filter(g => toZenkakuKana(g.kana||'').toLowerCase().includes(key));
   renderTable(filtered);
+  updateMainPadding();
 });
-clearSearch.addEventListener('click', ()=>{ searchInput.value=''; renderTable(guestData); });
+clearSearch.addEventListener('click', ()=>{ searchInput.value=''; renderTable(guestData); updateMainPadding(); });
 
 // -------- 日付表示（MM/DD） --------
 function pad2(n){ return n.toString().padStart(2,'0'); }
@@ -200,6 +243,8 @@ function renderTable(list){
     tbody.appendChild(tr);
   });
   document.getElementById('resultCount').textContent = `${list.length} 件表示`;
+  // ensure layout padding is updated after rendering
+  updateMainPadding();
 }
 
 // 初回 padding 設定
