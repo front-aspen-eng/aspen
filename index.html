@@ -240,7 +240,8 @@ function renderTable(list){
     const arrivalParts = parseDateParts(g.arrival||'');
     const remarksText = (g.remarks||'').toString();
     const isArrivalNotToday = arrivalParts && !isSameDateParts(arrivalParts, todayParts);
-    const hasRemarkFlag = remarksText.indexOf('現払')!==-1 || remarksText.indexOf('★')!==-1;
+    const remarksTrim = remarksText.trim();
+    const hasRemarkFlag = remarksTrim.indexOf('現払') !== -1 || remarksTrim.startsWith('★');
     // 優先度：到着日が当日でない（赤） > 備考フラグ（黄色）
     if(isArrivalNotToday) tr.classList.add('arrival-not-today');
     else if(hasRemarkFlag) tr.classList.add('remark-highlight');
