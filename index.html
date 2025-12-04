@@ -16,21 +16,19 @@
     input[type=file],select,input[type=text]{padding:10px 12px;border-radius:10px;border:1px solid #e2e6ef;font-size:15px}
     button{padding:10px 12px;border-radius:10px;border:0;background:#0b66ff;color:#fff;font-weight:600;font-size:15px}
     .small{font-size:13px;color:#7b8190}
-
     /* メイン（結果エリア）はトップバーの高さ分余白をとる */
     #main{max-width:980px;margin:0 auto;padding:16px}
-
     table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px;table-layout:auto}
     th,td{padding:8px 10px;border-bottom:1px solid #eef2f7;text-align:left;vertical-align:middle}
     th{background:#fbfdff}
     tr:hover{background:#f3f6ff}
-
     /* カナ名列優先（最大20%）。長い場合は省略表示 */
     th.kana-col, td.kana-col{max-width:20%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     @media (max-width:640px){ th.kana-col, td.kana-col{max-width:30%} }
-
-    /* 小画面でトップバー内の要素が縦に並ぶように調整 */
     @media (max-width:760px){ .controls{flex-direction:column;align-items:stretch} }
+    /* 強調色 */
+    .remark-highlight{background:#ffe9a9;color:#000}
+    .arrival-not-today{background:#e95464;color:#000}
   </style>
 </head>
 <body>
@@ -46,7 +44,7 @@
           <input id="fileInput" type="file" accept=".csv,text/csv" />
           <select id="encodingSelect">
             <option value="shift_jis" selected>Shift_JIS（デフォルト）</option>
-            <option value="utf-8">UTF-8</option>
+            <option value="utf-8">UTF-8（文字化けする場合はこちらを選択）</option>
           </select>
           <button id="loadBtn">読み込み開始</button>
         </div>
@@ -85,11 +83,8 @@ const searchCard = document.getElementById('searchCard');
 const searchInput = document.getElementById('searchInput');
 const clearSearch = document.getElementById('clearSearch');
 
-// topbar の高さに応じて main の padding-top を設定
-function updateMainPadding(){
-  const h = topbar.offsetHeight;
-  document.getElementById('main').style.paddingTop = (h + 8) + 'px';
-}
+// topbar padding helper
+function updateMainPadding(){ document.getElementById('main').style.paddingTop = (topbar.offsetHeight + 8) + 'px'; }
 window.addEventListener('resize', updateMainPadding);
 window.addEventListener('load', updateMainPadding);
 
@@ -114,10 +109,8 @@ function loadCSV(file){
         catch{ text = new TextDecoder('utf-8').decode(arr); }
       }
       parseCSV(text);
-      // 検索欄表示とレイアウト再計算
       searchCard.style.display = 'block';
       updateMainPadding();
-      // フォーカスはユーザー操作直後なのでOK
       try{ searchInput.focus(); }catch(e){}
     }catch(err){ alert('エラー: ' + err); }
   };
@@ -128,29 +121,32 @@ function loadCSV(file){
 // -------- CSV パーサ --------
 function splitCSVLine(line){
   const cols = [];
-  let cur = '';
-  let inQuotes = false;
+  let cur='', inQ=false;
   for(let i=0;i<line.length;i++){
-    const ch = line[i];
-    const nx = line[i+1];
-    if(ch === '"'){
-      if(inQuotes && nx === '"'){ cur += '"'; i++; }
-      else inQuotes = !inQuotes;
-    } else if(ch === ',' && !inQuotes){ cols.push(cur); cur = ''; }
-    else cur += ch;
+    const ch=line[i], nx=line[i+1];
+    if(ch==='"'){
+      if(inQ && nx==='"'){ cur+='"'; i++; }
+      else inQ=!inQ;
+    } else if(ch===',' && !inQ){ cols.push(cur); cur=''; }
+    else cur+=ch;
   }
   cols.push(cur);
   return cols;
 }
 
-function stripQuotes(s){ if(s===undefined||s===null) return ''; s = String(s).trim(); if(s.startsWith('"') && s.endsWith('"')) return s.slice(1,-1).replace(/""/g,'"').trim(); return s; }
+function stripQuotes(s){
+  if(s===undefined||s===null) return '';
+  s = String(s).trim();
+  if(s.startsWith('"') && s.endsWith('"')) return s.slice(1,-1).replace(/""/g,'"').trim();
+  return s;
+}
 
 function parseCSV(text){
-  // Fix: split by CRLF or LF safely
-  const lines = String(text).split(/\r?\n/).filter(l=>l.trim()!== '');
+  // 安全に改行で分割（CRLF / LF 対応）
+  const lines = String(text).split(/\r?\n/).filter(l => l.trim() !== '');
   if(lines.length===0){ alert('CSVが空です'); return; }
 
-  // 2行目に STRING が並ぶ場合は削除
+  // 2行目が "STRING" のみで埋まっている場合は削除
   if(lines.length>1){ const second = splitCSVLine(lines[1]).map(stripQuotes); if(second.every(v=>v.toUpperCase()==='STRING')) lines.splice(1,1); }
 
   const header = splitCSVLine(lines[0]).map(stripQuotes);
@@ -159,8 +155,9 @@ function parseCSV(text){
 
   guestData = lines.slice(1).map(line => {
     const c = splitCSVLine(line).map(stripQuotes);
-    return { kana:c[idx.kana]||'', arrival:c[idx.arrival]||'', depart:c[idx.depart]||'', nights:c[idx.nights]||'', remarks:c[idx.remarks]||'' };
+    return { kana: c[idx.kana]||'', arrival: c[idx.arrival]||'', depart: c[idx.depart]||'', nights: c[idx.nights]||'', remarks: c[idx.remarks]||'' };
   });
+
   renderTable(guestData);
 }
 
@@ -174,30 +171,89 @@ function toZenkakuKana(str){
   return s;
 }
 
+// -------- 日付パース（到着日判定用） --------
+function parseDateParts(s){
+  if(!s) return null;
+  const t = String(s).trim();
+  // YYYY/MM/DD or YYYY-MM-DD
+  let m = t.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  if(m) return { y: parseInt(m[1],10), m: parseInt(m[2],10), d: parseInt(m[3],10) };
+  // MM/DD or M/D
+  m = t.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
+  if(m) return { y: (new Date()).getFullYear(), m: parseInt(m[1],10), d: parseInt(m[2],10) };
+  // YYYYMMDD
+  m = t.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if(m) return { y: parseInt(m[1],10), m: parseInt(m[2],10), d: parseInt(m[3],10) };
+  return null;
+}
+
+function isSameDateParts(a,b){
+  return !!(a && b && a.y===b.y && a.m===b.m && a.d===b.d);
+}
+
 // -------- 検索ロジック --------
 searchInput.addEventListener('input', ()=>{
   const key = toZenkakuKana(searchInput.value.trim()).toLowerCase();
-  if(key===''){ renderTable(guestData); updateMainPadding(); return; }
+  if(key===''){ renderTable(guestData); return; }
   const filtered = guestData.filter(g => toZenkakuKana(g.kana||'').toLowerCase().includes(key));
   renderTable(filtered);
-  updateMainPadding();
 });
+
 clearSearch.addEventListener('click', ()=>{ searchInput.value=''; renderTable(guestData); updateMainPadding(); });
 
 // -------- 日付表示（MM/DD） --------
 function pad2(n){ return n.toString().padStart(2,'0'); }
-function formatMMDD(str){ if(!str) return ''; const s = String(str).trim(); if(s.length>=10 && (s[4]==='/'||s[4]==='-')){ const mm = s.substring(5,7); const dd = s.substring(8,10); return pad2(mm) + '/' + pad2(dd); } let sep = '/'; if(s.indexOf('/')===-1 && s.indexOf('-')!==-1) sep='-'; if(s.indexOf(sep)!==-1){ const parts = s.split(sep).filter(p=>p!==''); if(parts.length>=2){ if(parts[0].length===4) parts.shift(); const mm = parts[0]||''; const dd = parts[1]||''; if(mm && dd) return pad2(mm) + '/' + pad2(dd); } } return s; }
+function formatMMDD(str){
+  if(!str) return '';
+  const s = String(str).trim();
+  if(s.length>=10 && (s[4]==='/'||s[4]==='-')){
+    const mm = s.substring(5,7);
+    const dd = s.substring(8,10);
+    return pad2(mm) + '/' + pad2(dd);
+  }
+  let sep = '/';
+  if(s.indexOf('/')===-1 && s.indexOf('-')!==-1) sep='-';
+  if(s.indexOf(sep)!==-1){
+    const parts = s.split(sep).filter(p=>p!=='');
+    if(parts.length>=2){
+      if(parts[0].length===4) parts.shift();
+      const mm = parts[0]||'';
+      const dd = parts[1]||'';
+      if(mm && dd) return pad2(mm) + '/' + pad2(dd);
+    }
+  }
+  return s;
+}
 
-// -------- 表示処理 --------
+// -------- 表示処理（備考・到着日の着色を追加） --------
 function renderTable(list){
   const tbody = document.querySelector('#resultTable tbody'); tbody.innerHTML='';
+  const today = new Date();
+  const todayParts = { y: today.getFullYear(), m: today.getMonth() + 1, d: today.getDate() };
+
   list.forEach(g=>{
     const tr = document.createElement('tr');
+
+    // 判定フラグ
+    const arrivalParts = parseDateParts(g.arrival||'');
+    const remarksText = (g.remarks||'').toString();
+    const isArrivalNotToday = arrivalParts && !isSameDateParts(arrivalParts, todayParts);
+    const hasRemarkFlag = remarksText.indexOf('現払')!==-1 || remarksText.indexOf('★')!==-1;
+
+    // 優先度：到着日が当日でない（赤） > 備考フラグ（黄色）
+    if(isArrivalNotToday) tr.classList.add('arrival-not-today');
+    else if(hasRemarkFlag) tr.classList.add('remark-highlight');
+
     const tdKana = document.createElement('td'); tdKana.className='kana-col'; tdKana.textContent = g.kana||''; tdKana.title = g.kana||''; tr.appendChild(tdKana);
+
     const tdArrival = document.createElement('td'); tdArrival.textContent = formatMMDD(g.arrival||''); tr.appendChild(tdArrival);
+
     const tdDepart = document.createElement('td'); tdDepart.textContent = formatMMDD(g.depart||''); tr.appendChild(tdDepart);
+
     const tdNights = document.createElement('td'); tdNights.textContent = g.nights||''; tr.appendChild(tdNights);
+
     const tdRemarks = document.createElement('td'); tdRemarks.textContent = g.remarks||''; tr.appendChild(tdRemarks);
+
     tbody.appendChild(tr);
   });
   document.getElementById('resultCount').textContent = `${list.length} 件表示`;
