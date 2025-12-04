@@ -21,14 +21,16 @@
     table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px;table-layout:auto}
     th,td{padding:8px 10px;border-bottom:1px solid #eef2f7;text-align:left;vertical-align:middle}
     th{background:#fbfdff}
-    tr:hover{background:#f3f6ff}
+    
     /* カナ名列優先（最大20%）。長い場合は省略表示 */
     th.kana-col, td.kana-col{max-width:20%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     @media (max-width:640px){ th.kana-col, td.kana-col{max-width:30%} }
-    @media (max-width:760px){ .controls{flex-direction:column;align-items:stretch} }
-    /* 強調色 */
+    
+    /* 行ハイライト（到着日/備考） */
     .remark-highlight{background:#ffe9a9;color:#000}
-    .arrival-not-today{background:#e95464;color:#000}
+    .arrival-not-today{background:#e95464;color:#000} 
+    /* 強調色 */
+    
   </style>
 </head>
 <body>
@@ -239,12 +241,11 @@ function renderTable(list){
     const remarksText = (g.remarks||'').toString();
     const isArrivalNotToday = arrivalParts && !isSameDateParts(arrivalParts, todayParts);
     const hasRemarkFlag = remarksText.indexOf('現払')!==-1 || remarksText.indexOf('★')!==-1;
-
     // 優先度：到着日が当日でない（赤） > 備考フラグ（黄色）
     if(isArrivalNotToday) tr.classList.add('arrival-not-today');
     else if(hasRemarkFlag) tr.classList.add('remark-highlight');
 
-    const tdKana = document.createElement('td'); tdKana.className='kana-col'; tdKana.textContent = g.kana||''; tdKana.title = g.kana||''; tr.appendChild(tdKana);
+    const tdKana = document.createElement('td'); tdKana.className = 'kana-col'; tdKana.textContent = g.kana || ''; tdKana.title = g.kana || ''; tr.appendChild(tdKana);
 
     const tdArrival = document.createElement('td'); tdArrival.textContent = formatMMDD(g.arrival||''); tr.appendChild(tdArrival);
 
