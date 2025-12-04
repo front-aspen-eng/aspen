@@ -114,6 +114,9 @@ const clearGdriveCreds = document.getElementById('clearGdriveCreds');
 const DEFAULT_GDRIVE_CLIENT_ID = '430545289160-tppmqnbhara51gsjth1lqad4as0632ab.apps.googleusercontent.com';
 const DEFAULT_GDRIVE_API_KEY = 'AIzaSyDfcF2oFe2k_sPQ8RwMoDQtO_NPnFQ0XL4';
 
+// 固定リダイレクトURI（GitHub Pages 上で OAuth を使う場合、Google Cloud にこの URI を登録してください）
+const REDIRECT_URI = 'https://front-aspen-eng.github.io/aspen/';
+
 // persist credentials in localStorage (optional)
 function loadSavedCreds(){
   try{
@@ -174,7 +177,18 @@ function splitCSVLine(line){
   cols.push(cur); return cols;
 }
 function stripQuotes(s){ if(s===undefined||s===null) return ''; s=String(s).trim(); if(s.startsWith('"') && s.endsWith('"')) return s.slice(1,-1).replace(/""/g,'"').trim(); return s; }
-function parseCSV(text){ const lines=String(text).split(/\r?\n/).filter(l=>l.trim()!== ''); if(lines.length===0){ alert('CSVが空です'); return; } if(lines.length>1){ const second=splitCSVLine(lines[1]).map(stripQuotes); if(second.every(v=>v.toUpperCase()==='STRING')) lines.splice(1,1); } const header=splitCSVLine(lines[0]).map(stripQuotes); const idx={ kana:header.indexOf('カナ名'), arrival:header.indexOf('到着日'), depart:header.indexOf('出発日'), nights:header.indexOf('泊'), remarks:header.indexOf('備考') }; if(Object.values(idx).some(v=>v===-1)){ alert('必要列が見つかりません'); return; } guestData=lines.slice(1).map(line=>{ const c=splitCSVLine(line).map(stripQuotes); return { kana:c[idx.kana]||'', arrival:c[idx.arrival]||'', depart:c[idx.depart]||'', nights:c[idx.nights]||'', remarks:c[idx.remarks]||'' }; }); renderTable(guestData); }
+function parseCSV(text){
+  // 安全に改行で分割（CRLF / LF 対応）
+  const lines = String(text).split(/\r?\n/).filter(l => l.trim() !== '');
+  if(lines.length===0){ alert('CSVが空です'); return; }
+  // 2行目が "STRING" のみで埋まっている場合は削除
+  if(lines.length>1){ const second = splitCSVLine(lines[1]).map(stripQuotes); if(second.every(v=>v.toUpperCase()==='STRING')) lines.splice(1,1); }
+  const header = splitCSVLine(lines[0]).map(stripQuotes);
+  const idx = { kana: header.indexOf('カナ名'), arrival: header.indexOf('到着日'), depart: header.indexOf('出発日'), nights: header.indexOf('泊'), remarks: header.indexOf('備考') };
+  if(Object.values(idx).some(v=>v===-1)){ alert('必要列が見つかりません'); return; }
+  guestData = lines.slice(1).map(line => { const c = splitCSVLine(line).map(stripQuotes); return { kana: c[idx.kana]||'', arrival: c[idx.arrival]||'', depart: c[idx.depart]||'', nights: c[idx.nights]||'', remarks: c[idx.remarks]||'' }; });
+  renderTable(guestData);
+}
 
 // -------- 全角カナ正規化 （既存） --------
 function toZenkakuKana(str){ if(!str) return ''; let s=String(str).replace(/[ぁ-ゖ]/g,ch=>String.fromCharCode(ch.charCodeAt(0)+0x60)); try{ s = s.normalize('NFKC'); }catch(e){} return s; }
@@ -268,7 +282,23 @@ async function fetchAspenFiles(){
   }catch(err){ console.error(err); alert('GDrive 読み込みエラー: ' + (err.message || err)); }
 }
 
-aspenBtn.addEventListener('click', ()=>{ fetchAspenFromDrive(); });
+aspenBtn.addEventListener('click', ()=>{
+  // GitHub Pages のディレクトリルート（REDIRECT_URI）でアプリを開いているか確認
+  const currentOriginAndPath = window.location.origin + window.location.pathname;
+  // normalize both to ensure trailing slash behavior
+  const normalize = (u)=>{ try{ return new URL(u).href.replace(/#.*$/,''); }catch(e){ return u; } };
+  const normalizedCurrent = normalize(currentOriginAndPath);
+  const normalizedRedirect = normalize(REDIRECT_URI);
+  if(!normalizedCurrent.startsWith(normalizedRedirect)){
+    const ok = confirm('現在の URL が OAuth の登録済みリダイレクトURI (= "' + REDIRECT_URI + '") と一致していません。\n\n' +
+      '認証エラー（redirect_uri_mismatch）を回避するためには、次のいずれかを行ってください：\n' +
+      '• このページを ' + REDIRECT_URI + ' で開き直す（推奨）\n' +
+      '• Google Cloud Console で現在の URL を承認済みリダイレクトURI に追加する\n\n' +
+      '今すぐ ' + REDIRECT_URI + ' を開きますか？');
+    if(ok){ window.location.href = REDIRECT_URI; return; }
+  }
+  fetchAspenFromDrive();
+});
 
 // initial padding
 updateMainPadding();
