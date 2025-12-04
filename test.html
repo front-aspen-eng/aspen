@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>簡易ゲスト検索</title>
+  <style>
+    :root{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP","Segoe UI",Roboto,"Helvetica Neue",Arial;}
+    body{margin:0;background:#f7f8fb;color:#111}
+    /* 固定トップバー */
+    .topbar{position:fixed;top:0;left:0;right:0;background:#f7f8fb;z-index:999;padding:12px 0;box-shadow:0 6px 18px rgba(12,20,30,0.04)}
+    .topbar .wrap{max-width:980px;margin:0 auto;padding:0 16px}
+    h1{font-size:18px;margin:0 0 8px}
+    .card{background:#fff;border-radius:12px;padding:12px;box-shadow:none;margin-bottom:12px}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    input[type=file],select,input[type=text]{padding:10px 12px;border-radius:10px;border:1px solid #e2e6ef;font-size:15px}
+    button{padding:10px 12px;border-radius:10px;border:0;background:#0b66ff;color:#fff;font-weight:600;font-size:15px}
+    .small{font-size:13px;color:#7b8190}
+    /* メイン（結果エリア）はトップバーの高さ分余白をとる */
+    #main{max-width:980px;margin:0 auto;padding:16px}
+    table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px;table-layout:auto}
+    th,td{padding:8px 10px;border-bottom:1px solid #eef2f7;text-align:left;vertical-align:middle}
+    th{background:#fbfdff}
+    tr:hover{background:#f3f6ff}
+    /* カナ名列優先（最大20%）。長い場合は省略表示 */
+    th.kana-col, td.kana-col{max-width:20%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    @media (max-width:640px){ th.kana-col, td.kana-col{max-width:30%} }
+    @media (max-width:760px){ .controls{flex-direction:column;align-items:stretch} }
+    .dg-inline{display:inline-block;vertical-align:middle}
+    .gdrive-settings{margin-top:8px}
+    .gdrive-input{width:100%;padding:8px;border:1px solid #e2e6ef;border-radius:8px;margin-top:6px}
+  </style>
+</head>
+<body>
+
+  <!-- 固定トップバー：ここにタイトル / ファイル選択 / 検索欄をすべて入れる -->
+  <div class="topbar" id="topbar">
+    <div class="wrap">
+      <h1>簡易ゲスト検索</h1>
+
+      <div class="card" id="fileCard">
+        <div class="controls">
+          <label for="fileInput" class="small" style="margin-right:8px;">CSVファイル：</label>
+          <input id="fileInput" type="file" accept=".csv,text/csv" />
+          <select id="encodingSelect">
+            <option value="shift_jis" selected>Shift_JIS（デフォルト）</option>
+            <option value="utf-8">UTF-8（文字化けする場合はこちらを選択）</option>
+          </select>
+          <button id="loadBtn">読み込み開始</button>
+          <!-- アスペン（常時表示）ボタンをファイル領域に配置 -->
+          <button id="aspenBtn" style="background:#10b981;margin-left:8px">アスペン</button>
+        </div>
+
+        <!-- Google Drive 設定トグル -->
+        <div class="gdrive-settings">
+          <button id="toggleGdriveSettings" style="background:#fff;color:#0b66ff;border:1px solid #0b66ff;padding:8px 10px;border-radius:8px">GDrive設定を表示</button>
+          <div id="gdriveArea" style="display:none;margin-top:8px">
+            <div style="font-size:13px;color:#6b7280;margin-bottom:6px">Google API の Client ID と API Key を入力してください（初回のみ）。</div>
+            <input id="clientIdInput" class="gdrive-input" placeholder="OAuth Client ID (例: xxxxx.apps.googleusercontent.com)" />
+            <input id="apiKeyInput" class="gdrive-input" placeholder="API Key" />
+            <div style="margin-top:8px;display:flex;gap:8px">
+              <button id="saveGdriveCreds">保存</button>
+              <button id="clearGdriveCreds" style="background:#ef4444">クリア</button>
+            </div>
+            <div style="font-size:12px;color:#7b8190;margin-top:6px">※ GitHub Pages等に公開する場合は OAuth 同意画面やリダイレクトの設定が必要です。</div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="card" id="searchCard" style="display:none">
+        <div class="controls">
+          <input id="searchInput" type="text" placeholder="カナ名を入力" autocomplete="off" style="flex:1;min-width:120px" />
+          <button id="clearSearch">×</button>
+          <div id="resultCount" class="small" style="margin-left:8px;white-space:nowrap"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- メインコンテンツ（結果一覧） -->
+  <div id="main">
+    <div id="resultsContainer" class="card" style="padding:8px">
+      <table id="resultTable">
+        <thead>
+          <tr><th class="kana-col">カナ名</th><th>到着日</th><th>出発日</th><th>泊</th><th>備考</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+// -------- 基本設定 --------
+let guestData = [];
+const topbar = document.getElementById('topbar');
+const fileInput = document.getElementById('fileInput');
+const encodingSelect = document.getElementById('encodingSelect');
+const loadBtn = document.getElementById('loadBtn');
+const searchCard = document.getElementById('searchCard');
+const searchInput = document.getElementById('searchInput');
+const clearSearch = document.getElementById('clearSearch');
+const aspenBtn = document.getElementById('aspenBtn');
+
+// GDrive UI
+const toggleGdriveSettings = document.getElementById('toggleGdriveSettings');
+const gdriveArea = document.getElementById('gdriveArea');
+const clientIdInput = document.getElementById('clientIdInput');
+const apiKeyInput = document.getElementById('apiKeyInput');
+const saveGdriveCreds = document.getElementById('saveGdriveCreds');
+const clearGdriveCreds = document.getElementById('clearGdriveCreds');
+
+// --- デフォルトで組み込む API 情報（リクエストに基づき埋め込み） ---
+const DEFAULT_GDRIVE_CLIENT_ID = '430545289160-tppmqnbhara51gsjth1lqad4as0632ab.apps.googleusercontent.com';
+const DEFAULT_GDRIVE_API_KEY = 'AIzaSyDfcF2oFe2k_sPQ8RwMoDQtO_NPnFQ0XL4';
+
+// persist credentials in localStorage (optional)
+function loadSavedCreds(){
+  try{
+    const c = localStorage.getItem('gdrive_client_id');
+    const k = localStorage.getItem('gdrive_api_key');
+    // use saved if present, otherwise fall back to embedded defaults
+    clientIdInput.value = c || DEFAULT_GDRIVE_CLIENT_ID;
+    apiKeyInput.value = k || DEFAULT_GDRIVE_API_KEY;
+  }catch(e){}
+}
+function saveCreds(){ localStorage.setItem('gdrive_client_id', clientIdInput.value.trim()); localStorage.setItem('gdrive_api_key', apiKeyInput.value.trim()); alert('保存しました'); }
+function clearCreds(){ localStorage.removeItem('gdrive_client_id'); localStorage.removeItem('gdrive_api_key'); clientIdInput.value=''; apiKeyInput.value=''; alert('クリアしました'); }
+loadSavedCreds();
+
+toggleGdriveSettings.addEventListener('click', ()=>{ gdriveArea.style.display = gdriveArea.style.display==='none' ? 'block' : 'none'; });
+saveGdriveCreds.addEventListener('click', saveCreds);
+clearGdriveCreds.addEventListener('click', clearCreds);
+
+// topbar padding helper
+function updateMainPadding(){ document.getElementById('main').style.paddingTop = (topbar.offsetHeight + 8) + 'px'; }
+window.addEventListener('resize', updateMainPadding);
+window.addEventListener('load', updateMainPadding);
+
+// -------- CSV 読み込み (従来機能そのまま) --------
+loadBtn.addEventListener('click', () => {
+  const file = fileInput.files && fileInput.files[0];
+  if(!file){ alert('CSVファイルを選択してください'); return; }
+  loadCSV(file);
+});
+
+function loadCSV(file){
+  const reader = new FileReader();
+  const enc = encodingSelect.value;
+
+  reader.onload = function(e){
+    try{
+      const arr = e.target.result;
+      let text = '';
+      try{ text = new TextDecoder(enc).decode(arr); }
+      catch(err){
+        try{ text = new TextDecoder('shift_jis').decode(arr); }
+        catch{ text = new TextDecoder('utf-8').decode(arr); }
+      }
+      parseCSV(text);
+      searchCard.style.display = 'block';
+      updateMainPadding();
+      try{ searchInput.focus(); }catch(e){}
+    }catch(err){ alert('エラー: ' + err); }
+  };
+  reader.onerror = ()=> alert('ファイルの読み込みに失敗しました');
+  reader.readAsArrayBuffer(file);
+}
+
+// -------- CSV パーサ （既存ロジック） --------
+function splitCSVLine(line){
+  const cols=[]; let cur=''; let inQuotes=false;
+  for(let i=0;i<line.length;i++){ const ch=line[i]; const nx=line[i+1]; if(ch==='"'){ if(inQuotes && nx==='"'){ cur+='"'; i++; } else inQuotes=!inQuotes; } else if(ch===',' && !inQuotes){ cols.push(cur); cur=''; } else cur+=ch; }
+  cols.push(cur); return cols;
+}
+function stripQuotes(s){ if(s===undefined||s===null) return ''; s=String(s).trim(); if(s.startsWith('"') && s.endsWith('"')) return s.slice(1,-1).replace(/""/g,'"').trim(); return s; }
+function parseCSV(text){ const lines=String(text).split(/\r?\n/).filter(l=>l.trim()!== ''); if(lines.length===0){ alert('CSVが空です'); return; } if(lines.length>1){ const second=splitCSVLine(lines[1]).map(stripQuotes); if(second.every(v=>v.toUpperCase()==='STRING')) lines.splice(1,1); } const header=splitCSVLine(lines[0]).map(stripQuotes); const idx={ kana:header.indexOf('カナ名'), arrival:header.indexOf('到着日'), depart:header.indexOf('出発日'), nights:header.indexOf('泊'), remarks:header.indexOf('備考') }; if(Object.values(idx).some(v=>v===-1)){ alert('必要列が見つかりません'); return; } guestData=lines.slice(1).map(line=>{ const c=splitCSVLine(line).map(stripQuotes); return { kana:c[idx.kana]||'', arrival:c[idx.arrival]||'', depart:c[idx.depart]||'', nights:c[idx.nights]||'', remarks:c[idx.remarks]||'' }; }); renderTable(guestData); }
+
+// -------- 全角カナ正規化 （既存） --------
+function toZenkakuKana(str){ if(!str) return ''; let s=String(str).replace(/[ぁ-ゖ]/g,ch=>String.fromCharCode(ch.charCodeAt(0)+0x60)); try{ s = s.normalize('NFKC'); }catch(e){} return s; }
+
+// -------- 検索ロジック（既存） --------
+searchInput.addEventListener('input', ()=>{ const key=toZenkakuKana(searchInput.value.trim()).toLowerCase(); if(key===''){ renderTable(guestData); updateMainPadding(); return; } const filtered=guestData.filter(g=>toZenkakuKana(g.kana||'').toLowerCase().includes(key)); renderTable(filtered); updateMainPadding(); });
+clearSearch.addEventListener('click', ()=>{ searchInput.value=''; renderTable(guestData); updateMainPadding(); });
+
+// -------- 日付表示（MM/DD） （既存） --------
+function pad2(n){ return n.toString().padStart(2,'0'); }
+function formatMMDD(str){ if(!str) return ''; const s=String(str).trim(); if(s.length>=10 && (s[4]==='/'||s[4]==='-')){ const mm=s.substring(5,7); const dd=s.substring(8,10); return pad2(mm) + '/' + pad2(dd); } let sep='/'; if(s.indexOf('/')===-1 && s.indexOf('-')!==-1) sep='-'; if(s.indexOf(sep)!==-1){ const parts=s.split(sep).filter(p=>p!==''); if(parts.length>=2){ if(parts[0].length===4) parts.shift(); const mm=parts[0]||''; const dd=parts[1]||''; if(mm && dd) return pad2(mm) + '/' + pad2(dd); } } return s; }
+
+// -------- 表示処理（既存） --------
+function renderTable(list){ const tbody=document.querySelector('#resultTable tbody'); tbody.innerHTML=''; list.forEach(g=>{ const tr=document.createElement('tr'); const tdKana=document.createElement('td'); tdKana.className='kana-col'; tdKana.textContent=g.kana||''; tdKana.title=g.kana||''; tr.appendChild(tdKana); const tdArrival=document.createElement('td'); tdArrival.textContent=formatMMDD(g.arrival||''); tr.appendChild(tdArrival); const tdDepart=document.createElement('td'); tdDepart.textContent=formatMMDD(g.depart||''); tr.appendChild(tdDepart); const tdNights=document.createElement('td'); tdNights.textContent=g.nights||''; tr.appendChild(tdNights); const tdRemarks=document.createElement('td'); tdRemarks.textContent=g.remarks||''; tr.appendChild(tdRemarks); tbody.appendChild(tr); }); document.getElementById('resultCount').textContent=`${list.length} 件表示`; updateMainPadding(); }
+
+// -------- Google Drive (GIS) 認証と取得（cookiePolicy 問題回避） --------
+let gisLoaded = false;
+let tokenClient = null;
+let accessToken = null;
+
+function loadGisScript(){ return new Promise((resolve,reject)=>{
+  if(window.google && window.google.accounts) { gisLoaded = true; resolve(); return; }
+  const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client';
+  s.onload = ()=>{ gisLoaded = true; resolve(); };
+  s.onerror = reject;
+  document.head.appendChild(s);
+}); }
+
+function ensureTokenClient(){
+  if(tokenClient) return;
+  const clientId = localStorage.getItem('gdrive_client_id') || clientIdInput.value.trim() || DEFAULT_GDRIVE_CLIENT_ID;
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: 'https://www.googleapis.com/auth/drive.readonly',
+    callback: (resp) => {
+      if(resp.error){ console.error('token error', resp); alert('認可に失敗しました: ' + (resp.error)); return; }
+      accessToken = resp.access_token;
+      // after obtaining token, fetch file
+      fetchAspenFiles();
+    }
+  });
+}
+
+async function fetchAspenFromDrive(){
+  try{
+    await loadGisScript();
+    ensureTokenClient();
+    if(accessToken){
+      // already have token
+      fetchAspenFiles();
+      return;
+    }
+    // request token; this will open the consent popup if needed
+    tokenClient.requestAccessToken({ prompt: 'consent' });
+  }catch(err){ console.error(err); alert('GDrive 読み込みエラー: ' + (err.message || err)); }
+}
+
+async function fetchAspenFiles(){
+  try{
+    if(!accessToken){ throw new Error('access token がありません'); }
+    const q = encodeURIComponent("name = 'アスペン.csv' and trashed = false and 'root' in parents");
+    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&pageSize=10&fields=files(id,name)`;
+    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + accessToken } });
+    if(res.status === 401){
+      // token expired, request new one
+      accessToken = null;
+      tokenClient.requestAccessToken({ prompt: 'consent' });
+      return;
+    }
+    if(!res.ok) throw new Error('ファイル検索エラー: ' + res.status);
+    const data = await res.json();
+    if(!data.files || data.files.length === 0){ alert('Google Drive のルートに "アスペン.csv" が見つかりませんでした'); return; }
+    const fileId = data.files[0].id;
+
+    // download file contents
+    const downloadUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+    const r = await fetch(downloadUrl, { headers: { Authorization: 'Bearer ' + accessToken } });
+    if(r.status === 401){ accessToken = null; tokenClient.requestAccessToken({ prompt: 'consent' }); return; }
+    if(!r.ok) throw new Error('ファイルのダウンロードに失敗しました: ' + r.status);
+    const ab = await r.arrayBuffer();
+
+    // decode using selected encoding
+    let text = '';
+    try{ text = new TextDecoder(encodingSelect.value || 'shift_jis').decode(ab); }
+    catch(e){ try{ text = new TextDecoder('shift_jis').decode(ab); }catch(e2){ text = new TextDecoder('utf-8').decode(ab); } }
+
+    parseCSV(text);
+    searchCard.style.display = 'block';
+    updateMainPadding();
+    try{ searchInput.focus(); }catch(e){}
+  }catch(err){ console.error(err); alert('GDrive 読み込みエラー: ' + (err.message || err)); }
+}
+
+aspenBtn.addEventListener('click', ()=>{ fetchAspenFromDrive(); });
+
+// initial padding
+updateMainPadding();
+</script>
+</body>
+</html>
