@@ -7,35 +7,25 @@
   <style>
     :root{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP","Segoe UI",Roboto,"Helvetica Neue",Arial;}
     body{margin:0;background:#f7f8fb;color:#111}
-    /* 固定トップバー */
     .topbar{position:fixed;top:0;left:0;right:0;background:#f7f8fb;z-index:999;padding:12px 0;box-shadow:0 6px 18px rgba(12,20,30,0.04)}
     .topbar .wrap{max-width:980px;margin:0 auto;padding:0 16px}
     h1{font-size:18px;margin:0 0 8px}
     .card{background:#fff;border-radius:12px;padding:12px;box-shadow:none;margin-bottom:12px}
     .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    input[type=file],select,input[type=text]{padding:10px 12px;border-radius:10px;border:1px solid #e2e6ef;font-size:15px}
+    input[type=file],input[type=text],button{padding:10px 12px;border-radius:10px;border:1px solid #e2e6ef;font-size:15px}
     button{padding:10px 12px;border-radius:10px;border:0;background:#0b66ff;color:#fff;font-weight:600;font-size:15px}
     .small{font-size:13px;color:#7b8190}
-    /* メイン（結果エリア）はトップバーの高さ分余白をとる */
     #main{max-width:980px;margin:0 auto;padding:16px}
     table{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px;table-layout:auto}
     th,td{padding:8px 10px;border-bottom:1px solid #eef2f7;text-align:left;vertical-align:middle}
     th{background:#fbfdff}
-    
-    /* カナ名列優先（最大20%）。長い場合は省略表示 */
     th.kana-col, td.kana-col{max-width:20%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     @media (max-width:640px){ th.kana-col, td.kana-col{max-width:30%} }
-    
-    /* 行ハイライト（到着日/備考） */
     .remark-highlight{background:#ffe9a9;color:#000}
-    .arrival-not-today{background:#e95464;color:#000} 
-    /* 強調色 */
-    
+    .arrival-not-today{background:#e95464;color:#000}
   </style>
 </head>
 <body>
-
-  <!-- 固定トップバー：ここにタイトル / ファイル選択 / 検索欄をすべて入れる -->
   <div class="topbar" id="topbar">
     <div class="wrap">
       <h1>簡易ゲスト検索</h1>
@@ -44,8 +34,16 @@
         <div class="controls">
           <label for="fileInput" class="small" style="margin-right:8px;">CSVファイル：</label>
           <input id="fileInput" type="file" accept=".csv,text/csv" />
-          
           <button id="loadBtn">読み込み開始</button>
+        </div>
+
+        <div style="margin-top:8px">
+          <label class="small">備考ハイライト対象（カンマ区切り）※入力したキーワードは保存され、次回以降も自動で読み込まれます。</label>
+          <div class="controls" style="margin-top:6px">
+            <input id="remarkKeywords" type="text" placeholder="例: 現払,素泊り,添い寝" style="flex:1;min-width:120px" />
+            <button id="saveKeywords">保存</button>
+            <button id="clearKeywords" style="background:#ef4444">クリア</button>
+          </div>
         </div>
       </div>
 
@@ -59,7 +57,6 @@
     </div>
   </div>
 
-  <!-- メインコンテンツ（結果一覧） -->
   <div id="main">
     <div id="resultsContainer" class="card" style="padding:8px">
       <table id="resultTable">
@@ -72,7 +69,17 @@
   </div>
 
 <script>
-// -------- 基本設定 --------
+// Cookie helpers
+function setCookie(name, value, days){
+  const d = new Date(); d.setTime(d.getTime() + (days||365)*24*60*60*1000);
+  document.cookie = encodeURIComponent(name) + '=' + encodeURIComponent(value) + ';expires=' + d.toUTCString() + ';path=/';
+}
+function getCookie(name){
+  const m = document.cookie.match('(?:^|; )' + encodeURIComponent(name) + '=([^;]*)');
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+// Elements
 let guestData = [];
 const topbar = document.getElementById('topbar');
 const fileInput = document.getElementById('fileInput');
@@ -80,28 +87,39 @@ const loadBtn = document.getElementById('loadBtn');
 const searchCard = document.getElementById('searchCard');
 const searchInput = document.getElementById('searchInput');
 const clearSearch = document.getElementById('clearSearch');
+const remarkKeywords = document.getElementById('remarkKeywords');
+const saveKeywords = document.getElementById('saveKeywords');
+const clearKeywords = document.getElementById('clearKeywords');
 
-// topbar padding helper
+// load saved keywords (no default value)
+(function(){
+  try{
+    const saved = getCookie('remark_keywords');
+    if(saved !== null && remarkKeywords) remarkKeywords.value = saved;
+  }catch(e){}
+})();
+if(saveKeywords) saveKeywords.addEventListener('click', ()=>{ setCookie('remark_keywords', remarkKeywords.value); alert('保存しました'); });
+if(clearKeywords) clearKeywords.addEventListener('click', ()=>{ remarkKeywords.value=''; setCookie('remark_keywords',''); alert('クリアしました'); });
+
+// layout helper
 function updateMainPadding(){ document.getElementById('main').style.paddingTop = (topbar.offsetHeight + 8) + 'px'; }
 window.addEventListener('resize', updateMainPadding);
 window.addEventListener('load', updateMainPadding);
 
-// -------- CSV 読み込み --------
+// CSV load (Shift_JIS preferred)
 loadBtn.addEventListener('click', () => {
   const file = fileInput.files && fileInput.files[0];
   if(!file){ alert('CSVファイルを選択してください'); return; }
   loadCSV(file);
 });
-
 function loadCSV(file){
   const reader = new FileReader();
   const enc = 'shift_jis';
-
   reader.onload = function(e){
     try{
       const arr = e.target.result;
       let text = '';
-      try{ text = new TextDecoder('shift_jis').decode(arr); }
+      try{ text = new TextDecoder(enc).decode(arr); }
       catch(err){ text = new TextDecoder('utf-8').decode(arr); }
       parseCSV(text);
       searchCard.style.display = 'block';
@@ -113,14 +131,14 @@ function loadCSV(file){
   reader.readAsArrayBuffer(file);
 }
 
-// -------- CSV パーサ --------
+// CSV parsing helpers
 function splitCSVLine(line){
   const cols = [];
   let cur='', inQ=false;
   for(let i=0;i<line.length;i++){
     const ch=line[i], nx=line[i+1];
-    if(ch==='"'){
-      if(inQ && nx==='"'){ cur+='"'; i++; }
+    if(ch==='\"'){
+      if(inQ && nx==='\"'){ cur+='\"'; i++; }
       else inQ=!inQ;
     } else if(ch===',' && !inQ){ cols.push(cur); cur=''; }
     else cur+=ch;
@@ -128,136 +146,104 @@ function splitCSVLine(line){
   cols.push(cur);
   return cols;
 }
-
 function stripQuotes(s){
   if(s===undefined||s===null) return '';
   s = String(s).trim();
-  if(s.startsWith('"') && s.endsWith('"')) return s.slice(1,-1).replace(/""/g,'"').trim();
+  if(s.startsWith('\"') && s.endsWith('\"')) return s.slice(1,-1).replace(/\"\"/g,'\"').trim();
   return s;
 }
 
 function parseCSV(text){
-  // 安全に改行で分割（CRLF / LF 対応）
   const lines = String(text).split(/\r?\n/).filter(l => l.trim() !== '');
   if(lines.length===0){ alert('CSVが空です'); return; }
-
-  // 2行目が "STRING" のみで埋まっている場合は削除
   if(lines.length>1){ const second = splitCSVLine(lines[1]).map(stripQuotes); if(second.every(v=>v.toUpperCase()==='STRING')) lines.splice(1,1); }
-
   const header = splitCSVLine(lines[0]).map(stripQuotes);
   const idx = { kana: header.indexOf('カナ名'), arrival: header.indexOf('到着日'), depart: header.indexOf('出発日'), nights: header.indexOf('泊'), remarks: header.indexOf('備考') };
   if(Object.values(idx).some(v=>v===-1)){ alert('必要列が見つかりません'); return; }
-
   guestData = lines.slice(1).map(line => {
     const c = splitCSVLine(line).map(stripQuotes);
     return { kana: c[idx.kana]||'', arrival: c[idx.arrival]||'', depart: c[idx.depart]||'', nights: c[idx.nights]||'', remarks: c[idx.remarks]||'' };
   });
-
   renderTable(guestData);
 }
 
-// -------- 全角カナ正規化 --------
+// kana normalization
 function toZenkakuKana(str){
   if(!str) return '';
-  // ひらがな -> カタカナ
   let s = String(str).replace(/[ぁ-ゖ]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60));
-  // 半角カナ -> 全角（NFKCで半角→全角に変換）
   try{ s = s.normalize('NFKC'); }catch(e){}
   return s;
 }
 
-// -------- 日付パース（到着日判定用） --------
+// date parse & compare
 function parseDateParts(s){
   if(!s) return null;
   const t = String(s).trim();
-  // YYYY/MM/DD or YYYY-MM-DD
-  let m = t.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  let m = t.match(/^(\\d{4})[\\/\\-](\\d{1,2})[\\/\\-](\\d{1,2})$/);
   if(m) return { y: parseInt(m[1],10), m: parseInt(m[2],10), d: parseInt(m[3],10) };
-  // MM/DD or M/D
-  m = t.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
+  m = t.match(/^(\\d{1,2})[\\/\\-](\\d{1,2})$/);
   if(m) return { y: (new Date()).getFullYear(), m: parseInt(m[1],10), d: parseInt(m[2],10) };
-  // YYYYMMDD
-  m = t.match(/^(\d{4})(\d{2})(\d{2})$/);
+  m = t.match(/^(\\d{4})(\\d{2})(\\d{2})$/);
   if(m) return { y: parseInt(m[1],10), m: parseInt(m[2],10), d: parseInt(m[3],10) };
   return null;
 }
+function isSameDateParts(a,b){ return !!(a && b && a.y===b.y && a.m===b.m && a.d===b.d); }
 
-function isSameDateParts(a,b){
-  return !!(a && b && a.y===b.y && a.m===b.m && a.d===b.d);
-}
-
-// -------- 検索ロジック --------
+// search logic
 searchInput.addEventListener('input', ()=>{
   const key = toZenkakuKana(searchInput.value.trim()).toLowerCase();
   if(key===''){ renderTable(guestData); return; }
   const filtered = guestData.filter(g => toZenkakuKana(g.kana||'').toLowerCase().includes(key));
   renderTable(filtered);
 });
-
 clearSearch.addEventListener('click', ()=>{ searchInput.value=''; renderTable(guestData); updateMainPadding(); });
 
-// -------- 日付表示（MM/DD） --------
+// date format
 function pad2(n){ return n.toString().padStart(2,'0'); }
 function formatMMDD(str){
   if(!str) return '';
   const s = String(str).trim();
-  if(s.length>=10 && (s[4]==='/'||s[4]==='-')){
-    const mm = s.substring(5,7);
-    const dd = s.substring(8,10);
-    return pad2(mm) + '/' + pad2(dd);
-  }
-  let sep = '/';
-  if(s.indexOf('/')===-1 && s.indexOf('-')!==-1) sep='-';
-  if(s.indexOf(sep)!==-1){
-    const parts = s.split(sep).filter(p=>p!=='');
-    if(parts.length>=2){
-      if(parts[0].length===4) parts.shift();
-      const mm = parts[0]||'';
-      const dd = parts[1]||'';
-      if(mm && dd) return pad2(mm) + '/' + pad2(dd);
-    }
-  }
+  if(s.length>=10 && (s[4]==='/'||s[4]==='-')){ const mm = s.substring(5,7); const dd = s.substring(8,10); return pad2(mm) + '/' + pad2(dd); }
+  let sep = '/'; if(s.indexOf('/')===-1 && s.indexOf('-')!==-1) sep='-';
+  if(s.indexOf(sep)!==-1){ const parts = s.split(sep).filter(p=>p!==''); if(parts.length>=2){ if(parts[0].length===4) parts.shift(); const mm = parts[0]||''; const dd = parts[1]||''; if(mm && dd) return pad2(mm) + '/' + pad2(dd); } }
   return s;
 }
 
-// -------- 表示処理（備考・到着日の着色を追加） --------
+// render table (with highlight rules)
 function renderTable(list){
   const tbody = document.querySelector('#resultTable tbody'); tbody.innerHTML='';
   const today = new Date();
   const todayParts = { y: today.getFullYear(), m: today.getMonth() + 1, d: today.getDate() };
 
+  // collect keywords from input (split by comma)
+  const kwRaw = (remarkKeywords && remarkKeywords.value) ? remarkKeywords.value : '';
+  const keywords = kwRaw.split(',').map(s=>s.trim()).filter(s=>s!=='');
+  
   list.forEach(g=>{
     const tr = document.createElement('tr');
-
-    // 判定フラグ
     const arrivalParts = parseDateParts(g.arrival||'');
     const remarksText = (g.remarks||'').toString();
     const isArrivalNotToday = arrivalParts && !isSameDateParts(arrivalParts, todayParts);
     const remarksTrim = remarksText.trim();
-    // 備考の判定：'現払' が含まれているか、もしくは文頭に '★' がある場合にフラグを立てる
-    const hasRemarkFlag = (remarksTrim.indexOf('現払') !== -1) || (remarksTrim.startsWith('★'));
-    // 優先度：到着日が当日でない（赤） > 備考フラグ（黄色）
+
+    // highlight if: arrival not today (red) else if remarks have leading ★ or any keyword present
+    const hasRemarkFlag = (remarksTrim.startsWith('★')) || keywords.some(k=> k && remarksTrim.indexOf(k)!==-1);
     if(isArrivalNotToday) tr.classList.add('arrival-not-today');
     else if(hasRemarkFlag) tr.classList.add('remark-highlight');
 
     const tdKana = document.createElement('td'); tdKana.className = 'kana-col'; tdKana.textContent = g.kana || ''; tdKana.title = g.kana || ''; tr.appendChild(tdKana);
-
     const tdArrival = document.createElement('td'); tdArrival.textContent = formatMMDD(g.arrival||''); tr.appendChild(tdArrival);
-
     const tdDepart = document.createElement('td'); tdDepart.textContent = formatMMDD(g.depart||''); tr.appendChild(tdDepart);
-
     const tdNights = document.createElement('td'); tdNights.textContent = g.nights||''; tr.appendChild(tdNights);
-
     const tdRemarks = document.createElement('td'); tdRemarks.textContent = g.remarks||''; tr.appendChild(tdRemarks);
 
     tbody.appendChild(tr);
   });
   document.getElementById('resultCount').textContent = `${list.length} 件表示`;
-  // ensure layout padding is updated after rendering
   updateMainPadding();
 }
 
-// 初回 padding 設定
+// initial layout
 updateMainPadding();
 </script>
 </body>
