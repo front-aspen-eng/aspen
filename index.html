@@ -44,17 +44,14 @@
         <div class="controls">
           <label for="fileInput" class="small" style="margin-right:8px;">CSVファイル：</label>
           <input id="fileInput" type="file" accept=".csv,text/csv" />
-          <select id="encodingSelect">
-            <option value="shift_jis" selected>Shift_JIS（デフォルト）</option>
-            <option value="utf-8">UTF-8（文字化けする場合はこちらを選択）</option>
-          </select>
+          
           <button id="loadBtn">読み込み開始</button>
         </div>
       </div>
 
       <div class="card" id="searchCard" style="display:none">
         <div class="controls">
-          <input id="searchInput" type="text" placeholder="カナ名を入力" autocomplete="off" style="flex:1;min-width:120px" />
+          <input id="searchInput" type="text" placeholder="名前を入力（ひらがな、カタカナ、英語）" autocomplete="off" style="flex:1;min-width:120px" />
           <button id="clearSearch">×</button>
           <div id="resultCount" class="small" style="margin-left:8px;white-space:nowrap"></div>
         </div>
@@ -79,7 +76,6 @@
 let guestData = [];
 const topbar = document.getElementById('topbar');
 const fileInput = document.getElementById('fileInput');
-const encodingSelect = document.getElementById('encodingSelect');
 const loadBtn = document.getElementById('loadBtn');
 const searchCard = document.getElementById('searchCard');
 const searchInput = document.getElementById('searchInput');
@@ -99,17 +95,14 @@ loadBtn.addEventListener('click', () => {
 
 function loadCSV(file){
   const reader = new FileReader();
-  const enc = encodingSelect.value;
+  const enc = 'shift_jis';
 
   reader.onload = function(e){
     try{
       const arr = e.target.result;
       let text = '';
-      try{ text = new TextDecoder(enc).decode(arr); }
-      catch(err){
-        try{ text = new TextDecoder('shift_jis').decode(arr); }
-        catch{ text = new TextDecoder('utf-8').decode(arr); }
-      }
+      try{ text = new TextDecoder('shift_jis').decode(arr); }
+      catch(err){ text = new TextDecoder('utf-8').decode(arr); }
       parseCSV(text);
       searchCard.style.display = 'block';
       updateMainPadding();
@@ -241,7 +234,8 @@ function renderTable(list){
     const remarksText = (g.remarks||'').toString();
     const isArrivalNotToday = arrivalParts && !isSameDateParts(arrivalParts, todayParts);
     const remarksTrim = remarksText.trim();
-    const hasRemarkFlag = remarksTrim.indexOf('現払') !== -1 || remarksTrim.startsWith('★');
+    // 備考の判定：'現払' が含まれているか、もしくは文頭に '★' がある場合にフラグを立てる
+    const hasRemarkFlag = (remarksTrim.indexOf('現払') !== -1) || (remarksTrim.startsWith('★'));
     // 優先度：到着日が当日でない（赤） > 備考フラグ（黄色）
     if(isArrivalNotToday) tr.classList.add('arrival-not-today');
     else if(hasRemarkFlag) tr.classList.add('remark-highlight');
