@@ -81,6 +81,16 @@
 
 <script>
 // -------- 基本設定 --------
+// Cookie helpers
+function setCookie(name,value,days){
+  const d=new Date(); d.setTime(d.getTime() + (days||365)*24*60*60*1000);
+  document.cookie = encodeURIComponent(name)+'='+encodeURIComponent(value)+';expires='+d.toUTCString()+';path=/';
+}
+function getCookie(name){
+  const m = document.cookie.match('(?:^|; )'+encodeURIComponent(name)+'=([^;]*)');
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
 let guestData = [];
 const topbar = document.getElementById('topbar');
 const fileInput = document.getElementById('fileInput');
@@ -88,6 +98,19 @@ const loadBtn = document.getElementById('loadBtn');
 const searchCard = document.getElementById('searchCard');
 const searchInput = document.getElementById('searchInput');
 const clearSearch = document.getElementById('clearSearch');
+const remarkKeywords = document.getElementById('remarkKeywords');
+const saveKeywords = document.getElementById('saveKeywords');
+const clearKeywords = document.getElementById('clearKeywords');
+
+// load saved keywords (no default value)
+(function(){
+  try{
+    const saved = getCookie('remark_keywords');
+    if(saved !== null && remarkKeywords) remarkKeywords.value = saved;
+  }catch(e){ console.warn('Cookie read failed', e); }
+})();
+if(saveKeywords) saveKeywords.addEventListener('click', ()=>{ setCookie('remark_keywords', remarkKeywords.value); alert('保存しました'); });
+if(clearKeywords) clearKeywords.addEventListener('click', ()=>{ remarkKeywords.value=''; setCookie('remark_keywords',''); alert('クリアしました'); });
 
 // topbar padding helper
 function updateMainPadding(){ document.getElementById('main').style.paddingTop = (topbar.offsetHeight + 8) + 'px'; }
