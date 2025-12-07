@@ -92,6 +92,7 @@ function getCookie(name){
 }
 
 let guestData = [];
+let hasNumber = false;
 const topbar = document.getElementById('topbar');
 const fileInput = document.getElementById('fileInput');
 const loadBtn = document.getElementById('loadBtn');
@@ -177,11 +178,28 @@ function parseCSV(text){
 
   const header = splitCSVLine(lines[0]).map(stripQuotes);
   const idx = { kana: header.indexOf('カナ名'), arrival: header.indexOf('到着日'), depart: header.indexOf('出発日'), nights: header.indexOf('泊'), number: header.indexOf('人数'), remarks: header.indexOf('備考') };
-  if(Object.values(idx).some(v=>v===-1)){ alert('必要列が見つかりません'); return; }
+  const required = [idx.kana, idx.arrival, idx.depart, idx.nights, idx.remarks];
+  if(required.some(v=>v===-1)){ alert('必要列が見つかりません'); return; }
+
+  hasNumber = idx.number !== -1;
+  // update table header depending on whether '人数' exists
+  const thead = document.querySelector('#resultTable thead');
+  if(hasNumber){
+    thead.innerHTML = '<tr><th class="kana-col">カナ名</th><th>到着日</th><th>出発日</th><th>泊</th><th>人数</th><th>備考</th></tr>';
+  } else {
+    thead.innerHTML = '<tr><th class="kana-col">カナ名</th><th>到着日</th><th>出発日</th><th>泊</th><th>備考</th></tr>';
+  }
 
   guestData = lines.slice(1).map(line => {
     const c = splitCSVLine(line).map(stripQuotes);
-    return { kana: c[idx.kana]||'', arrival: c[idx.arrival]||'', depart: c[idx.depart]||'', nights: c[idx.nights]||'', number: c[idx.number]||'', remarks: c[idx.remarks]||'' };
+    return {
+      kana: c[idx.kana]||'',
+      arrival: c[idx.arrival]||'',
+      depart: c[idx.depart]||'',
+      nights: c[idx.nights]||'',
+      number: (idx.number!==-1 ? c[idx.number]||'' : ''),
+      remarks: c[idx.remarks]||''
+    };
   });
 
   renderTable(guestData);
@@ -279,7 +297,9 @@ function renderTable(list){
 
     const tdNights = document.createElement('td'); tdNights.textContent = g.nights||''; tr.appendChild(tdNights);
 
-    const tdNumber = document.createElement('td'); tdNumber.textContent = g.number||''; tr.appendChild(tdNumber);
+    if(hasNumber){
+      const tdNumber = document.createElement('td'); tdNumber.textContent = g.number||''; tr.appendChild(tdNumber);
+    }
 
     const tdRemarks = document.createElement('td'); tdRemarks.textContent = g.remarks||''; tr.appendChild(tdRemarks);
 
