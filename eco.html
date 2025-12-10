@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>エコ清掃検索（最終版）</title>
+  <style>
+    body{font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial; padding:20px; background:#f3f4f6; color:#111}
+    .wrap{max-width:980px;margin:18px auto;background:#fff;padding:20px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
+    h1{font-size:22px;margin:0 0 12px}
+    .controls{display:flex;gap:12px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+    .filebox{flex:1}
+    input[type=file]{display:block;width:100%;padding:12px;border-radius:8px;border:2px solid #d1d5db;background:#fff;font-size:15px;cursor:pointer}
+    input[type=text]{width:100%;padding:10px;border-radius:8px;border:1px solid #cbd5e1;font-size:15px}
+    label.field{flex-basis:100%}
+    button{padding:10px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-size:15px;cursor:pointer}
+    .note{font-size:15px;color:#333;line-height:1.6;margin-bottom:8px}
+    table{width:100%;border-collapse:collapse;margin-top:12px;background:#fff}
+    th,td{padding:10px;border:1px solid #e6e6e6;text-align:left;font-size:14px;vertical-align:middle}
+    th.col-room, td.col-room{width:140px;font-size:16px;font-weight:600}
+    th.col-name, td.col-name{width:220px;font-size:16px;font-weight:600}
+    th.col-memo, td.col-memo{font-size:14px}
+    caption{caption-side:top;text-align:left;padding:6px;font-size:14px;color:#444}
+    .empty{color:#666;padding:18px;text-align:center}
+    @media (max-width:640px){
+      th.col-room, td.col-room, th.col-name, td.col-name {width:auto; display:table-cell}
+      input[type=file], input[type=text]{font-size:14px}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>エコ清掃検索</h1>
+
+    <div class="note">
+      1. TAPでCSVファイルを出力してください<br/>
+      2. 「ファイルの選択」で出力したCSVファイルを選択すると自動で抽出が始まります。<br/>
+      ※エコ関連のキーワードは、「検索キーワード」にカンマ区切りで入力してください（例：エコ,Eco,ECO,清掃不要）。
+    </div>
+
+    <!-- ファイル選択エリア（縦並び） -->
+    <div class="file-area" style="margin-bottom:12px">
+      <div class="filebox" style="width:100%; margin-bottom:8px;">
+        <input id="csvfile" type="file" accept=".csv,text/csv" aria-label="CSVを選択（選ぶだけで自動で検索されます）" style="width:100%;padding:12px;border-radius:8px;border:2px solid #d1d5db;background:#fff;font-size:15px;cursor:pointer" />
+      </div>
+      <div>
+        <button id="clearBtn" type="button" style="display:inline-block;padding:10px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-size:15px;cursor:pointer">表示クリア</button>
+      </div>
+    </div>
+
+    <!-- 検索キーワード（ファイル選択の下に配置） -->
+    <div class="keyword-area" style="margin-bottom:12px">
+      <label style="display:block;font-size:15px;margin-bottom:6px">検索キーワード（カンマ区切り）：</label>
+      <input id="keywordInput" type="text" value="" aria-label="検索キーワード" style="width:100%;padding:10px;border-radius:8px;border:1px solid #cbd5e1;font-size:15px" />
+    </div>
+
+    <table id="resultTable" style="display:none">
+      <caption>抽出結果</caption>
+      <thead>
+        <tr>
+          <th class="col-room">部屋番号</th>
+          <th class="col-name">名前</th>
+          <th class="col-memo">備考</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div id="noResult" class="empty">まだ結果がありません。CSV を選択してください。</div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script>
+    // --- ユーティリティ ---
+    function hiraganaToKatakana(str){
+      return String(str).split('').map(function(ch){
+        var code = ch.charCodeAt(0);
+        if(code >= 0x3041 && code <= 0x3096) return String.fromCharCode(code + 0x60);
+        return ch;
+      }).join('');
+    }
+
+    function stripSurroundingQuotes(s){
+      if(s === null || s === undefined) return '';
+      var t = String(s);
+      if(t.length >= 2 && t.charAt(0) === '"' && t.charAt(t.length-1) === '"') return t.substring(1, t.length-1);
+      return t;
+    }
+
+    // Cookie helpers (no regex to avoid escaping issues)
+    function setCookie(name, value, days){
+      var expires = '';
+      if(days){
+        var d = new Date(); d.setTime(d.getTime() + (days*24*60*60*1000));
+        expires = '; expires=' + d.toUTCString();
+      }
+      document.cookie = name + '=' + encodeURIComponent(value || '') + expires + '; path=/';
+    }
+    function getCookie(name){
+      var cookies = document.cookie ? document.cookie.split('; ') : [];
+      for(var i=0;i<cookies.length;i++){
+        var parts = cookies[i].split('=');
+        var key = parts.shift();
+        var val = parts.join('=');
+        if(key === name) return decodeURIComponent(val);
+      }
+      return null;
+    }
+
+    // キーワード管理
+    function getKeywordList(){
+      var inputEl = document.getElementById('keywordInput');
+      var raw = (inputEl.value || '').trim();
+      if(!raw){
+        var c = getCookie('eco_keywords');
+        if(c) raw = c;
+      }
+      if(!raw) raw = 'エコ,Eco,清掃不要';
+      var parts = raw.split(/[,、]/).map(function(p){ return p.trim(); }).filter(function(p){ return p.length>0; });
+      setCookie('eco_keywords', parts.join(','), 365);
+      return parts;
+    }
+
+    document.addEventListener('DOMContentLoaded', function(){
+      var saved = getCookie('eco_keywords');
+      if(saved) document.getElementById('keywordInput').value = saved;
+      document.getElementById('keywordInput').addEventListener('change', function(){ setCookie('eco_keywords', this.value || '', 365); });
+    });
+
+    function matchesKeywords(text, keywordList){
+      if(!text) return false;
+      var nfkc = String(text).normalize('NFKC');
+      var lower = nfkc.toLowerCase();
+      var targetKat = hiraganaToKatakana(nfkc);
+      for(var i=0;i<keywordList.length;i++){
+        var kw = String(keywordList[i]).normalize('NFKC').trim();
+        if(!kw) continue;
+        if(/[A-Za-z]/.test(kw)){
+          if(lower.indexOf(kw.toLowerCase()) !== -1) return true;
+        } else {
+          var kwKat = hiraganaToKatakana(kw);
+          if(targetKat.indexOf(kwKat) !== -1) return true;
+        }
+      }
+      return false;
+    }
+
+    // 完全一致ベースのヘッダー検出
+    function tolerantFind(headers, desired){
+      var hnorm = headers.map(function(h){ return (h||'').toString().normalize('NFKC'); });
+      var candidates = {
+        room: ['ﾙｰﾑ'],
+        kana: ['カナ名'],
+        memo: ['備考']
+      };
+      for(var i=0;i<hnorm.length;i++){
+        var k = hnorm[i].trim();
+        for(var j=0;j<candidates[desired].length;j++){
+          var cand = candidates[desired][j].normalize('NFKC').trim();
+          if(k === cand) return i;
+        }
+      }
+      return -1;
+    }
+
+    function mapColumns(headers){
+      var h = headers.map(x=> (x||'').toString());
+      var room = tolerantFind(h,'room');
+      var kana = tolerantFind(h,'kana');
+      var memo = tolerantFind(h,'memo');
+      if(room === -1 && h.length>2) room = 2;
+      if(kana === -1 && h.length>7) kana = 7;
+      if(memo === -1 && h.length>13) memo = 13;
+      if(room === -1) room = 0;
+      if(kana === -1) kana = 1;
+      if(memo === -1) memo = 2;
+      return {roomIndex: room, kanaIndex: kana, memoIndex: memo};
+    }
+
+    function renderTable(rows, cols){
+      var table = document.getElementById('resultTable');
+      var tbody = table.querySelector('tbody');
+      tbody.innerHTML = '';
+      if(rows.length === 0){ table.style.display = 'none'; document.getElementById('noResult').style.display = ''; return }
+      table.style.display = '';
+      document.getElementById('noResult').style.display = 'none';
+      rows.forEach(function(r){
+        var tr = document.createElement('tr');
+        var td1 = document.createElement('td'); td1.className = 'col-room'; td1.textContent = r[cols.roomIndex] ?? '';
+        var td2 = document.createElement('td'); td2.className = 'col-name'; td2.textContent = r[cols.kanaIndex] ?? '';
+        var td3 = document.createElement('td'); td3.className = 'col-memo'; td3.textContent = r[cols.memoIndex] ?? '';
+        tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Shift_JIS 固定で読み込む
+    async function readShiftJisFile(file){
+      var ab = await new Promise((res, rej) => {
+        var fr = new FileReader();
+        fr.onload = e => res(e.target.result);
+        fr.onerror = e => rej(e);
+        fr.readAsArrayBuffer(file);
+      });
+      try{
+        var decoder = new TextDecoder('shift_jis');
+        var text = decoder.decode(ab);
+        return text;
+      }catch(e){
+        alert('Shift_JIS の読み込みに対応していないブラウザです。別のブラウザでお試しください。');
+        console.error(e);
+        return null;
+      }
+    }
+
+    async function processCSVFile(file){
+      try{
+        var text = await readShiftJisFile(file);
+        if(!text) return;
+        Papa.parse(text, {
+          skipEmptyLines: true,
+          complete: function(results){
+            var data = results.data;
+            if(!data || data.length === 0){ alert('CSVの読み込みに失敗しました（空ファイル）。'); return; }
+            data = data.map(function(row){ return row.map(function(cell){ return stripSurroundingQuotes(cell); }); });
+            var headers = data[0];
+            var cols = mapColumns(headers);
+            var bodyRows = data.slice(1);
+            var keywords = getKeywordList();
+            var maxIndex = Math.max(cols.roomIndex, cols.kanaIndex, cols.memoIndex);
+            var filtered = bodyRows.filter(function(row){
+              for(var i=row.length;i<=maxIndex;i++) row.push('');
+              var memoVal = row[cols.memoIndex] ?? '';
+              return matchesKeywords(memoVal, keywords);
+            });
+            renderTable(filtered, cols);
+            var noResult = document.getElementById('noResult');
+            if(filtered.length > 0){
+              noResult.textContent = '検出: ' + filtered.length + ' 件';
+              noResult.style.display = '';
+            }else{
+              noResult.textContent = '検出: 0 件';
+              noResult.style.display = '';
+            }
+            console.log('CSV読み込み行数(ヘッダ除く):', bodyRows.length, ' / 検出数:', filtered.length);
+          },
+          error: function(err){ alert('CSVの解析中にエラーが発生しました: ' + err.message); console.error(err); }
+        });
+      }catch(e){
+        alert('ファイル読み込み中にエラーが発生しました（コンソール参照）。');
+        console.error(e);
+      }
+    }
+
+    // 自動実行: ファイル選択で開始
+    var fileInput = document.getElementById('csvfile');
+    fileInput.addEventListener('change', function(e){
+      var f = e.target.files[0];
+      if(!f) return;
+      document.getElementById('noResult').textContent = '読み込み中… 少々お待ちください';
+      document.getElementById('noResult').style.display = '';
+      processCSVFile(f);
+    });
+
+    // クリア
+    document.getElementById('clearBtn').addEventListener('click', function(){
+      document.getElementById('resultTable').style.display = 'none';
+      document.getElementById('csvfile').value = '';
+      document.getElementById('noResult').textContent = 'まだ結果がありません。CSV を選択してください。';
+      document.getElementById('noResult').style.display = '';
+    });
+  </script>
+</body>
+</html>
