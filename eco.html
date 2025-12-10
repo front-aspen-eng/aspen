@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>エコ清掃検索（最終版）</title>
+  <title>エコ清掃検索</title>
   <style>
     body{font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial; padding:20px; background:#f3f4f6; color:#111}
     .wrap{max-width:980px;margin:18px auto;background:#fff;padding:20px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
@@ -35,7 +35,8 @@
     <div class="note">
       1. TAPでCSVファイルを出力してください<br/>
       2. 「ファイルの選択」で出力したCSVファイルを選択すると自動で抽出が始まります。<br/>
-      ※エコ関連のキーワードは、「検索キーワード」にカンマ区切りで入力してください（例：エコ,Eco,ECO,清掃不要）。
+      ※備考に「エコ,Eco,ECO,清掃不要」が含まれている場合は、デフォルトで抽出されます。<br/>
+      ※エコ関連のキーワードを追加する場合は、「検索キーワード」にカンマ区切りで入力してください（例：えこ,清掃不要,清掃なし）。
     </div>
 
     <!-- ファイル選択エリア（縦並び） -->
@@ -272,3 +273,4 @@
   </script>
 </body>
 </html>
+
