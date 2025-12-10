@@ -36,7 +36,7 @@
       1. TAPでCSVファイルを出力してください<br/>
       2. 「ファイルの選択」で出力したCSVファイルを選択すると自動で抽出が始まります。<br/>
       ※備考に「エコ,Eco,ECO,清掃不要」のいずれかが含まれている場合は、デフォルトで抽出されます。<br/>
-      ※エコ関連のキーワードを追加する場合は、「検索キーワード」にカンマ区切りで入力してください（例：えこ,清掃不要,清掃なし）。
+      ※エコ関連のキーワードを変更する場合は、「検索キーワード」にカンマ区切りで入力してください（例：えこ,清掃不要,清掃なし）。
     </div>
 
     <!-- ファイル選択エリア（縦並び） -->
@@ -89,43 +89,43 @@
     }
 
     // Cookie helpers (no regex to avoid escaping issues)
-    function setCookie(name, value, days){
-      var expires = '';
-      if(days){
-        var d = new Date(); d.setTime(d.getTime() + (days*24*60*60*1000));
-        expires = '; expires=' + d.toUTCString();
-      }
-      document.cookie = name + '=' + encodeURIComponent(value || '') + expires + '; path=/';
-    }
-    function getCookie(name){
-      var cookies = document.cookie ? document.cookie.split('; ') : [];
-      for(var i=0;i<cookies.length;i++){
-        var parts = cookies[i].split('=');
-        var key = parts.shift();
-        var val = parts.join('=');
-        if(key === name) return decodeURIComponent(val);
-      }
-      return null;
-    }
+    // function setCookie(name, value, days){
+    //   var expires = '';
+    //   if(days){
+    //     var d = new Date(); d.setTime(d.getTime() + (days*24*60*60*1000));
+    //     expires = '; expires=' + d.toUTCString();
+    //   }
+    //   document.cookie = name + '=' + encodeURIComponent(value || '') + expires + '; path=/';
+    // }
+    // function getCookie(name){
+    //   var cookies = document.cookie ? document.cookie.split('; ') : [];
+    //   for(var i=0;i<cookies.length;i++){
+    //     var parts = cookies[i].split('=');
+    //     var key = parts.shift();
+    //     var val = parts.join('=');
+    //     if(key === name) return decodeURIComponent(val);
+    //   }
+    //   return null;
+    // }
 
     // キーワード管理
     function getKeywordList(){
       var inputEl = document.getElementById('keywordInput');
       var raw = (inputEl.value || '').trim();
-      if(!raw){
-        var c = getCookie('eco_keywords');
-        if(c) raw = c;
-      }
+    //   if(!raw){
+    //     var c = getCookie('eco_keywords');
+    //     if(c) raw = c;
+    //   }
       if(!raw) raw = 'エコ,Eco,ECO,清掃不要';
       var parts = raw.split(/[,、]/).map(function(p){ return p.trim(); }).filter(function(p){ return p.length>0; });
-      setCookie('eco_keywords', parts.join(','), 365);
+    //   setCookie('eco_keywords', parts.join(','), 365);
       return parts;
     }
 
     document.addEventListener('DOMContentLoaded', function(){
-      var saved = getCookie('eco_keywords');
-      if(saved) document.getElementById('keywordInput').value = saved;
-      document.getElementById('keywordInput').addEventListener('change', function(){ setCookie('eco_keywords', this.value || '', 365); });
+    //   var saved = getCookie('eco_keywords');
+    //   if(saved) document.getElementById('keywordInput').value = saved;
+    //   document.getElementById('keywordInput').addEventListener('change', function(){ setCookie('eco_keywords', this.value || '', 365); });
     });
 
     function matchesKeywords(text, keywordList){
@@ -273,6 +273,5 @@
   </script>
 </body>
 </html>
-
 
 
